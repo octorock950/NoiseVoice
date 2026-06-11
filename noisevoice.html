@@ -1,0 +1,343 @@
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>NoiseVoice — What’s your loudest?</title>
+<style>
+  :root{
+    --gutter:#6a1e48;
+    --column:#e5e7eb;         /* light gray */
+    --accent:#1f6feb;         /* button/edges */
+    --text:#0b0b0b;
+  }
+  html,body{
+    height:100%;
+    margin:0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    color:var(--text);
+    background: var(--gutter);
+  }
+  /* Page frame: side gutters + center column */
+  .frame{
+    min-height:100%;
+    display:grid;
+    grid-template-columns: 17.5vw 65vw 17.5vw; /* 17.5% | 65% | 17.5% */
+  }
+  .gutter{ background:#6a1e48; }
+  .center{
+    background: var(--column);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+  }
+  /* Content row inside the column */
+  .content{
+    width:92%;
+    max-width:1200px;
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:24px;
+    align-items:center;
+  }
+  /* Left cluster: mic + prompt + waveform bar */
+  .left{
+    display:grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "mic  wave"
+      "label wave"
+      "result wave";
+    gap:14px 18px;
+    align-items:center;
+  }
+  .mic-btn{
+    grid-area: mic;
+    width:96px;
+    height:96px;
+    border-radius:50%;
+    border:none;
+    background: radial-gradient(100% 100% at 50% 0%, #ffffff 0%, #d1e0ff 100%);
+    box-shadow: inset 0 0 0 2px #c6d4ff, 0 6px 18px rgba(0,0,0,.18);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition: transform .05s ease, box-shadow .2s ease;
+  }
+  .mic-btn:active{ transform: scale(.98); box-shadow: inset 0 0 0 2px #c6d4ff, 0 2px 10px rgba(0,0,0,.22);}
+  .mic-icon{
+    width:44px;height:44px; display:block;
+    background: var(--accent);
+    -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="[w3.org](http://www.w3.org/2000/svg)" width="96" height="96" viewBox="0 0 24 24" fill="black"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 11h-2z"/></svg>') center / contain no-repeat;
+            mask: url('data:image/svg+xml;utf8,<svg xmlns="[w3.org](http://www.w3.org/2000/svg)" width="96" height="96" viewBox="0 0 24 24" fill="black"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H8v2h8v-2h-3v-2.08A7 7 0 0 0 19 11h-2z"/></svg>') center / contain no-repeat;
+  }
+  .click-here{
+    grid-area: label;
+    font-weight: 700;
+    color:#000;
+  }
+  .result{
+    grid-area: result;
+    font-size: 14px;
+    color:#333;
+    min-height: 1.4em;
+  }
+  /* Waveform bar (25% of column width) */
+  .wave-wrap{
+    grid-area: wave;
+    justify-self: stretch;
+  }
+  .wave-box{
+    width: 100%;
+    aspect-ratio: 5 / 4;        /* responsive canvas area */
+    background:#f6f7f9;
+    border:2px solid #c9cdd3;
+    border-radius:10px;
+    position:relative;
+    overflow:hidden;
+  }
+  /* We'll set the container to exactly 25% of the column with JS on load and resize */
+  .wave-wrap{ width: 25%; }
+  canvas{ width:100%; height:100%; display:block; }
+  /* Right square with instructions */
+  .right{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .notice{
+    width: min(340px, 70%);
+    aspect-ratio: 1 / 1;
+    background:#ffffff;
+    border:2px solid #c9cdd3;
+    border-radius:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    padding:18px;
+    font-weight:600;
+  }
+  /* Top-left logo area */
+  .logo{
+    position:absolute;
+    top:14px;
+    left:14px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .logo img{ height:54px; width:auto; }
+  /* Small status pill */
+  .status{
+    position:absolute;
+    bottom:18px; left:50%;
+    transform: translateX(-50%);
+    background:#111; color:#fff; font-size:12px;
+    padding:6px 10px; border-radius:999px;
+    opacity:.9;
+  }
+  @media (max-width: 900px){
+    .content{ grid-template-columns: 1fr; }
+    .right{ order:-1; margin-bottom:10px; }
+    .wave-wrap{ width: 100%; } /* On small screens, give the wave full row width */
+  }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="gutter"></div>
+    <main class="center">
+      <!-- Logo (provided image) -->
+      <div class="logo">
+        <!-- Replace src with your actual logo file path if different -->
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAQAAAB4nq9aAAAABGdBTUEAALGPC/xhBQAA" alt="NoiseVoice.com logo" />
+        <strong>NoiseVoice.com</strong>
+      </div>
+      <div class="content">
+        <!-- RIGHT: instruction square -->
+        <section class="right">
+          <div class="notice">To begin, click "allow" on the microphone pop-up</div>
+        </section>
+        <!-- LEFT: mic + waveform -->
+        <section class="left">
+          <button id="mic" class="mic-btn" aria-label="Record 5 seconds">
+            <span class="mic-icon" aria-hidden="true"></span>
+          </button>
+          <div class="click-here">Click here!</div>
+          <div id="result" class="result"></div>
+          <div class="wave-wrap">
+            <div class="wave-box">
+              <canvas id="wave"></canvas>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div id="status" class="status" hidden>Ready</div>
+    </main>
+    <div class="gutter"></div>
+  </div>
+<script>
+(() => {
+  const micBtn = document.getElementById('mic');
+  const waveCanvas = document.getElementById('wave');
+  const resultEl = document.getElementById('result');
+  const statusEl = document.getElementById('status');
+  const waveWrap = document.querySelector('.wave-wrap');
+  // Categories from human to lion roar (rough peak SPL references at 1m, approximate)
+  const scale = [
+    { name: "Human whisper",   threshold: 30 },
+    { name: "Quiet room",      threshold: 40 },
+    { name: "Normal speech",   threshold: 60 },
+    { name: "Shout",           threshold: 80 },
+    { name: "Dog bark",        threshold: 90 },
+    { name: "Motorcycle",      threshold: 100 },
+    { name: "Thunderclap",     threshold: 110 },
+    { name: "Elephant trumpet",threshold: 112 },
+    { name: "Rock concert",    threshold: 115 },
+    { name: "Lion roar",       threshold: 114 } // lions ~110–114 dB at close range
+  ];
+  // Note: We cannot measure true dB SPL with a browser mic; we compute a relative dBFS proxy.
+  // Maintain 25% width of the 65% column for the waveform bar on wider screens
+  function setWaveWidth() {
+    const center = document.querySelector('.center');
+    const columnWidth = center.getBoundingClientRect().width;
+    if (window.matchMedia('(max-width: 900px)').matches) return; // rule already sets 100%
+    waveWrap.style.width = (columnWidth * 0.25) + 'px';
+  }
+  window.addEventListener('resize', setWaveWidth);
+  window.addEventListener('load', setWaveWidth);
+  let audioCtx, analyser, source, mediaStream;
+  let drawing = false;
+  let rafId = null;
+  function showStatus(msg, ms=1200){
+    statusEl.textContent = msg;
+    statusEl.hidden = false;
+    if (ms) {
+      setTimeout(()=> statusEl.hidden = true, ms);
+    }
+  }
+  async function ensureAudio() {
+    if (audioCtx) return;
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    source = audioCtx.createMediaStreamSource(mediaStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+  }
+  // Draw waveform to canvas
+  function drawWave() {
+    const ctx = waveCanvas.getContext('2d');
+    const W = waveCanvas.width = waveCanvas.clientWidth;
+    const H = waveCanvas.height = waveCanvas.clientHeight;
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Uint8Array(bufferLength);
+    ctx.clearRect(0,0,W,H);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#1f6feb';
+    function loop() {
+      if (!drawing) return;
+      analyser.getByteTimeDomainData(dataArray);
+      ctx.fillStyle = '#f6f7f9';
+      ctx.fillRect(0,0,W,H);
+      ctx.beginPath();
+      const slice = W / bufferLength;
+      let x = 0;
+      for (let i=0;i<bufferLength;i++){
+        const v = dataArray[i] / 128.0;     // 0..2
+        const y = (v * H/2);
+        if (i===0) ctx.moveTo(x,y);
+        else ctx.lineTo(x,y);
+        x += slice;
+      }
+      ctx.stroke();
+      rafId = requestAnimationFrame(loop);
+    }
+    drawing = true;
+    loop();
+  }
+  function stopDrawing(){
+    drawing = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  }
+  // Compute relative loudness in dBFS from samples
+  function computePeakDb(samples){
+    // RMS -> dBFS. Here we use peak absolute amplitude for "loudest".
+    let peak = 0;
+    for (let i=0;i<samples.length;i++){
+      const v = Math.abs(samples[i]);
+      if (v > peak) peak = v;
+    }
+    // dBFS reference is 1.0 full-scale
+    const db = 20 * Math.log10(peak || 1e-8);
+    return db; // negative number up to 0
+  }
+  function bucketCategory(dbfs){
+    // Map relative dBFS (negative) to approximate SPL-like buckets by normalization.
+    // We'll shift so 0 dBFS ~ 115 SPL bucket top for fun visualization.
+    const rel = 115 + dbfs; // crude mapping for user feedback only
+    let best = scale[0];
+    for (const item of scale){
+      if (rel >= item.threshold) best = item;
+    }
+    return { label: best.name, approx: Math.max(0, Math.round(rel)) };
+  }
+  async function recordFiveSeconds(){
+    try{
+      await ensureAudio();
+    }catch(err){
+      resultEl.textContent = 'Microphone access denied or unavailable.';
+      showStatus('Mic blocked', 1800);
+      return;
+    }
+    showStatus('Recording 5 seconds…', 1600);
+    await audioCtx.resume();
+    drawWave();
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    source.connect(processor);
+    processor.connect(audioCtx.destination); // required in some browsers
+    const chunks = [];
+    let maxDb = -120;
+    const handle = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      chunks.push(new Float32Array(input)); // copy
+      const d = computePeakDb(input);
+      if (d > maxDb) maxDb = d;
+    };
+    processor.onaudioprocess = handle;
+    micBtn.disabled = true;
+    micBtn.style.filter = 'grayscale(0.3)';
+    resultEl.textContent = '';
+    await new Promise(res => setTimeout(res, 5000)); // 5 seconds
+    // Stop collection
+    processor.onaudioprocess = null;
+    try{
+      processor.disconnect();
+    }catch{}
+    try{
+      source.disconnect(processor);
+    }catch{}
+    stopDrawing();
+    // Analyze final peak category
+    const { label, approx } = bucketCategory(maxDb);
+    resultEl.innerHTML = `Loudest detected: <strong>${label}</strong> (relative ~${approx} dB).`;
+    micBtn.disabled = false;
+    micBtn.style.filter = '';
+    showStatus('Done');
+  }
+  micBtn.addEventListener('click', recordFiveSeconds);
+  // Prompt the permission early so the notice makes sense
+  (async () => {
+    try{
+      await ensureAudio();
+      showStatus('Mic ready');
+    }catch{
+      // leave notice as-is; user must click allow
+    }
+  })();
+})();
+</script>
+</body>
+</html>
